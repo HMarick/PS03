@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 03"
-author: "WRITE YOUR NAME HERE"
+author: "Harrison Marick"
 date: "2017-09-26"
 output:
   html_document:
@@ -21,6 +21,18 @@ data2 <- read_csv("data/data2.csv")
 ```
 
 
+
+The function below takes two data sets of equal length and computes the root mean squared error. I use this function in the following problems. 
+
+```{r}
+rmse <- function(actual, predicted)
+{
+    error=actual-predicted
+    sqrt(mean(error^2))
+}
+```
+
+
 # Question
 
 For both `data1` and `data2` tibbles (a tibble is a data frame with some
@@ -34,11 +46,111 @@ For both `data1` and `data2` tibbles (a tibble is a data frame with some
 
 # Data 1
 
+Below, I have randomly split Data 1 into two sets: A and B. I then create a splines model with set A as my learning set and test on B. I compute the RMSE and then do the opposite: model with B and test on A. The average is my score, but of course I did not specify the degrees of freedom of the models. In order to optimize my selection for degrees of freedom, I repeated the cross validation process 100 times, where df=1,...,100. The optimal degrees of freedom is the number that yields the best score, or smallest RMSE. In this case, 30 yielded the lowest RSME. 
+
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
+set.seed(27)
+sample_a<-filter(data1, ID %in% sample(data1$ID, length(data1$ID)/2)) #samples half of the data
+sample_b<-filter(data1, !(ID %in% sample_a$ID)) #other half of data
+
+score_data=data.frame(df=rep(0, 100), score=rep(0,100)) #initialize data structure to store DF and score for each model.
+for (i in 1:100){
+learn_A<-smooth.spline(sample_a$x, sample_a$y, df=i) #learning on a, with df=i
+pred=predict(learn_A, sample_b$x) #predict on b
+sample_b$y_pred<-pred[2]$y #create predicted column
+
+learn_B<-smooth.spline(sample_b$x, sample_b$y, df=i) #learn on B
+pred=predict(learn_B, sample_a$x) #predict on A
+sample_a$y_pred<-pred[2]$y#create predicted column
+a_score=rmse(sample_a$y, sample_a$y_pred) #score when pred on A
+b_score=rmse(sample_b$y, sample_b$y_pred) #score when pred on B
+score=(a_score+b_score)/2 #average
+score_data$df[i]=i 
+score_data$score[i]=score
+
+}
+
+with(score_data, df[score == min(score)]) #find minimum
+
+ggplot(score_data, aes(df, score)) + geom_point() + ggtitle("Optimal Degrees of Freedom for Data 1")+geom_vline(xintercept=30) + ylab("RSME") #plot for justification
+
 ```
+
+The above graph is a scatterplot of degrees of freedom versus the cross validation score (average RSME). I have placed a vertical line on the above graph where $df=30$ to make it clear that the minimum occurs at $df=30$. 
+
+
+```{r}
+mod1 <- smooth.spline(x=data1$x, y=data1$y, df=30) #creates optimal model
+mod1_tidy <- mod1 %>% 
+  broom::augment() 
+plot1 <- ggplot(mod1_tidy, aes(x=x)) +  
+  geom_point(aes(y=y)) + 
+  geom_line(aes(y=.fitted), col="blue") + #places fitted line over scatterplot
+  ggtitle("DF=30") #overlays model with scatterplot
+plot1
+```
+Above is a graph of the fitted model overlaying the original dataset. Clearly, there is a significant amount of the noise in the dataset, as there is significant scatter from the line. 
+
+```{r}
+sd(residuals(mod1), na.rm=TRUE)
+```
+
+We can estimate the noise in the model by the residuals from the model. Naturally, the best way to estimate $\sigma$, the standard deviation of the noise component, is with the standard deviation of the residuals. This leaves us with $\widehat{\sigma}=14.90$.
+
+
 
 # Data 2
 
 ```{r, echo=TRUE, warning=FALSE, message=FALSE}
+#NO COMMENTS IN THIS CHUNK, SINCE IT IS IDENTICAL TO ABOVE
+set.seed(58)
+sample_a2<-filter(data2, ID %in% sample(data2$ID, length(data2$ID)/2))
+sample_b2<-filter(data2, !(ID %in% sample_a2$ID))
+
+score_data2=data.frame(df=rep(0, 100), score=rep(0,100)) 
+for (i in 1:100){
+learn_A2<-smooth.spline(sample_a2$x, sample_a2$y, df=i)
+pred=predict(learn_A2, sample_b2$x)
+sample_b2$y_pred<-pred[2]$y 
+
+learn_B2<-smooth.spline(sample_b2$x, sample_b2$y, df=i)
+pred=predict(learn_B2, sample_a2$x)
+sample_a2$y_pred<-pred[2]$y 
+a_score2=rmse(sample_a2$y, sample_a2$y_pred)
+b_score2=rmse(sample_b2$y, sample_b2$y_pred)
+score=(a_score2+b_score2)/2
+score_data2$df[i]=i
+score_data2$score[i]=score
+
+}
+
+with(score_data2, df[score == min(score)])
+
+```
+I conducted the same process above that I did with Data 1. Here, the optimal degrees of freedom for our splines model is 28. We can see in the graph below that the minimum estimated RSME through cross validation is lowest when df=28. 
+
+
+```{r}
+ggplot(score_data2, aes(df, score)) + geom_point() + ggtitle("Optimal Degrees of Freedom for Data 2")+geom_vline(xintercept=28) + ylab("RSME") #plot of DF vs RSME for justification
 ```
 
+
+```{r}
+#CODE IS SAME AS ABOVE
+mod2 <- smooth.spline(x=data2$x, y=data2$y, df=28)
+mod2_tidy <- mod2 %>% 
+  broom::augment() 
+plot2 <- ggplot(mod2_tidy, aes(x=x)) +  
+  geom_point(aes(y=y)) + 
+  geom_line(aes(y=.fitted), col="blue") + #places fitted line over scatterplot
+  ggtitle("DF=28")
+plot2
+```
+
+The plot above overlays the fitted splines model with 28 degrees of freedom with the data. Again, there is plenty of noise in the dataset, which is evident in that the points do not follow our modeled curve very closely. 
+
+```{r}
+sd(residuals(mod2), na.rm=TRUE)
+```
+
+I have estimated $\sigma$, the standard deviation of the noise component of the model, just as I did with the first dataset. Here, we have $\widehat{\sigma}$=24.71
